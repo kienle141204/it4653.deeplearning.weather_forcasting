@@ -1,0 +1,17 @@
+.venv 
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+
+test.py
+test1.py
+data.*
+logs/
+*.log
+.DS_Store
+output.*
+test0.py
+venv
+venv
