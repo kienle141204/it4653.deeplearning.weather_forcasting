@@ -118,6 +118,9 @@ class WeatherDataset(Dataset):
         # Weather data: (T, H, W, C)
         seq_x = torch.FloatTensor(self.data[s_begin:s_end])
         seq_y = torch.FloatTensor(self.data[r_begin:r_end])
+
+        seq_x = seq_x.permute(0, 3, 1, 2)  # (T, C, H, W)
+        seq_y = seq_y.permute(0, 3, 1, 2)  # (T, C, H, W)
         
         # Temporal features: (T, D_temporal)
         seq_x_mark = torch.FloatTensor(

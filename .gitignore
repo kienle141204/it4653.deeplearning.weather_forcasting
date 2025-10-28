@@ -15,3 +15,6 @@ output.*
 test0.py
 venv
 venv
+
+*.zip
+checkpoints/
