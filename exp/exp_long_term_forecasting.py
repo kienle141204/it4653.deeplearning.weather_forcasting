@@ -5,6 +5,10 @@ from torch import optim
 import time 
 import numpy as np
 import copy
+import warnings
+
+# Bỏ qua tất cả các cảnh báo
+warnings.filterwarnings('ignore')
 
 class Exp_Long_Term_Forecasting(Exp_Basic):
     def __init__(self, args):
@@ -82,6 +86,8 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                 seq_x_mark = seq_x_mark.to(self.device)
                 seq_y_mark = seq_y_mark.to(self.device)
 
+                # print(seq_x.shape, seq_y.shape)
+
                 optimizer.zero_grad()
                 output = self.model(seq_x)
                 loss = criterion(output, seq_y)
@@ -107,6 +113,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                 print(f"New best model! Validation loss: {best_valid_loss:.7f}")
             else:
                 patience_counter += 1
+                print(f"Early stopping counter: {patience_counter} out of {patience}")
                 if patience_counter >= patience:
                     print(f"Early stopping at epoch {epoch + 1}")
                     break

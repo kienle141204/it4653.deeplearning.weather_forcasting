@@ -14,6 +14,7 @@ class Model(ModelBase):
         self.num_layers = configs.num_layers
         self.bias = configs.bias
         self.batch_first = configs.batch_first
+        self.predict_steps = configs.pred_len
         
         cell_list = []
         for i in range(self.num_layers):
@@ -22,7 +23,12 @@ class Model(ModelBase):
         
         self.cell_list = nn.ModuleList(cell_list)
 
-        self.linear = nn.Linear(self.hidden_channels[-1], self.input_channels)
+        self.output_conv = nn.Conv2d(
+            in_channels=self.hidden_channels[-1],
+            out_channels=self.input_channels,
+            kernel_size=1,
+            padding=0
+        )
 
     def forward(self, input_tensor, hidden_state=None):
         if not self.batch_first:
@@ -56,18 +62,32 @@ class Model(ModelBase):
 
             layer_output = torch.stack(output_inner, dim=1)
             cur_layer_input = layer_output
+            
+            hidden_state[layer_idx] = [h, c]
 
-            layer_output_list.append(layer_output)
-            last_state_list.append([h, c])
-
-        # if not self.return_all_layers:
-        #     layer_output_list = layer_output_list[-1:]
-        #     last_state_list = last_state_list[-1:]
-
-        last_layer_output = layer_output_list[-1]
-        B, T, C, H, W = last_layer_output.shape
-        output = self.linear(last_layer_output.reshape(-1, C)).reshape(B, T, -1, H, W)
-        return output
+        # decoder
+        predictions = []
+        
+        last_output = self.output_conv(hidden_state[-1][0])
+        
+        for t in range(self.predict_steps):
+            predictions.append(last_output)
+            cur_layer_input = last_output
+            
+            for layer_idx in range(self.num_layers):
+                h, c = hidden_state[layer_idx]
+                h, c = self.cell_list[layer_idx](
+                    input_tensor=cur_layer_input,
+                    cur_state=[h, c]
+                )
+                cur_layer_input = h
+                hidden_state[layer_idx] = [h, c]
+            
+            last_output = self.output_conv(hidden_state[-1][0])
+        
+        predictions = torch.stack(predictions, dim=1)  # (b, predict_steps, c, h, w)
+        
+        return predictions
 
     def _init_hidden(self, batch_size, image_size):
         init_states = []

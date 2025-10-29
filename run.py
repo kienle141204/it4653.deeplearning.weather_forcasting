@@ -35,6 +35,21 @@ def main():
     parser.add_argument('--bias', action='store_true', help='whether to use bias in ConvLSTM layers', default=False)
     parser.add_argument('--batch_first', action='store_true', help='whether batch is first dimension', default=True)
 
+    # SwinLSTM parameters
+    # parser.add_argument('--input_channels', default=1, type=int, help='Number of input image channels')
+    parser.add_argument('--input_img_size', default=16, type=int, help='Input image size')
+    parser.add_argument('--patch_size', default=2, type=int, help='Patch size of input images')
+    parser.add_argument('--embed_dim', default=128, type=int, help='Patch embedding dimension')
+    parser.add_argument('--depths', default=[12], type=int, help='Depth of Swin Transformer layer for SwinLSTM-B')
+    parser.add_argument('--depths_down', default=[2, 6], type=int, help='Downsample of SwinLSTM-D')
+    parser.add_argument('--depths_up', default=[6, 2], type=int, help='Upsample of SwinLSTM-D')
+    parser.add_argument('--heads_number', default=[4, 8], type=int,
+                        help='Number of attention heads in different layers')
+    parser.add_argument('--window_size', default=4, type=int, help='Window size of Swin Transformer layer')
+    parser.add_argument('--drop_rate', default=0., type=float, help='Dropout rate')
+    parser.add_argument('--attn_drop_rate', default=0., type=float, help='Attention dropout rate')
+    parser.add_argument('--drop_path_rate', default=0.1, type=float, help='Stochastic depth rate')
+
     # optimization
     parser.add_argument('--num_workers', type=int, default=2, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')
