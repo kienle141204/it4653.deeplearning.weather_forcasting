@@ -1,14 +1,16 @@
 import argparse
 from exp.exp_long_term_forecasting import Exp_Long_Term_Forecasting
+import torch
 
 def main():
     parser = argparse.ArgumentParser(description='Run Weather Forecasting Experiment')
     # basic config
     parser.add_argument('--grid_size', type=tuple, default=(16, 16), help='grid size of the data')
-    # parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
+    parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
     # parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
     parser.add_argument('--model', type=str, required=True, default='ConvLSTM',
                         help='model name, options: [ConvLSTM]')
+    parser.add_argument('--inverse', action='store_true', help='inverse output data', default=False)
 
     # # data loader
     # parser.add_argument('--data', type=str, required=True, default='custom', help='dataset type')
@@ -71,11 +73,47 @@ def main():
    
     args = parser.parse_args()
 
-    exp = Exp_Long_Term_Forecasting(args)
-    exp.train()
+    # exp = Exp_Long_Term_Forecasting(args)
+    if args.is_training:
+        for ii in range(args.itr):
+            # setting record of experiments
+            setting = '{}_sl{}_ll{}_pl{}_{}'.format(
+                        args.model,
+                        # args.data,
+                        args.seq_len,
+                        args.label_len,
+                        args.pred_len,
+                        ii)
+
+            exp = Exp_Long_Term_Forecasting(args)
+            print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+            exp.train(setting)
+
+            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            exp.test(setting)
+
+            # if args.do_predict:
+            #     print('>>>>>>>predicting : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            #     exp.predict(setting, True)
+
+            torch.cuda.empty_cache()
+    else:
+        ii = 0
+        setting = '{}_sl{}_ll{}_pl{}_{}'.format(
+            args.model,
+            # args.data,
+            args.seq_len,
+            args.label_len,
+            args.pred_len,
+            ii)
+
+        exp = Exp_Long_Term_Forecasting(args)
+        # print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+        # exp.test(setting, test=1)
+        # torch.cuda.empty_cache()
     
     # Here you would typically load your config and start the experiment
-    print(f"Running experiment with config: {args.config}")
+    # print(f"Running experiment with config: {args.config}")
 
 if __name__ == "__main__":
     main()

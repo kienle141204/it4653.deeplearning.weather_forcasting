@@ -6,12 +6,12 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from utils.timefeatures import time_features
 
 class WeatherDataset(Dataset):
-    def __init__(self, root_path: str="./data/data.csv", frag="train", size=None, 
+    def __init__(self, root_path: str="./data/data.csv", flag="train", size=None, 
                  grid_size=(16, 16), timeenc=0, freq="h"):
         self.root_path = root_path
         self.timeenc = timeenc
         self.freq = freq
-        self.frag = frag
+        self.flag = flag
         if size is None:
             self.seq_len = 32
             self.pred_len = 32
@@ -78,13 +78,13 @@ class WeatherDataset(Dataset):
         train_size = int(0.7 * num_grids)
         val_size = int(0.15 * num_grids)
         
-        if self.frag == "train":
+        if self.flag == "train":
             data = data[:train_size]
             timestamps = timestamps[:train_size]
-        elif self.frag == "val":
+        elif self.flag == "val":
             data = data[train_size:train_size + val_size]
             timestamps = timestamps[train_size:train_size + val_size]
-        elif self.frag == "test":
+        elif self.flag == "test":
             data = data[train_size + val_size:]
             timestamps = timestamps[train_size + val_size:]
         

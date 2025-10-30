@@ -6,6 +6,8 @@ import time
 import numpy as np
 import copy
 import warnings
+import os 
+from utils.metrics import metric
 
 # Bỏ qua tất cả các cảnh báo
 warnings.filterwarnings('ignore')
@@ -20,8 +22,8 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
         return model
 
-    def _get_data(self, frag):
-        data_loader, dataset = data_provider(self.args, frag)
+    def _get_data(self, flag):
+        data_loader, dataset = data_provider(self.args, flag)
         return data_loader, dataset
     
     def _create_optimizer(self):
@@ -55,10 +57,10 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         self.model.train()
         return total_loss
         
-    def train(self):
-        train_loader, train_dataset = self._get_data(frag="train")
-        vali_loader, vali_dataset = self._get_data(frag="val")
-        test_loader, test_dataset = self._get_data(frag="test")
+    def train(self, setting):
+        train_loader, train_dataset = self._get_data(flag="train")
+        vali_loader, vali_dataset = self._get_data(flag="val")
+        test_loader, test_dataset = self._get_data(flag="test")
 
         optimizer = self._create_optimizer()
         scheduler = self._create_scheduler(optimizer)
@@ -68,7 +70,9 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         patience_counter = 0
 
         train_steps = len(train_loader)
-        path = self.args.checkpoints + self.args.model
+        path = self.args.checkpoints + self.args.model + '/' + setting
+        if not os.path.exists(path):
+            os.makedirs(path)
 
         best_valid_loss = float('inf')
         best_model = None
@@ -121,5 +125,62 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         best_model_path = path + '/' + 'checkpoint.pth'
         torch.save(best_model.state_dict(), best_model_path)
 
+    def test(self, setting, test=0):
+        test_loader, test_data = self._get_data(flag='test')
+        if test:
+            print("Loading Model")
+            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + self.args.model  + '/' + setting , 'checkpoint.pth')))
+        
+        preds = []
+        trues = []
+        self.model.eval()
+        with torch.no_grad():
+            for i, (index, batch_x, batch_y, batch_x_mark, batch_y_mark, sq) in enumerate(test_loader):
+                batch_x = batch_x.float().to(self.device)
+                batch_y = batch_y.float().to(self.device)
+
+                batch_x_mark = batch_x_mark.float().to(self.device)
+                batch_y_mark = batch_y_mark.float().to(self.device)
+
+                outputs = self.model(batch_x)
+
+                outputs = outputs.detach().cpu().numpy()
+                batch_y = batch_y.detach().cpu().numpy()
+
+                if self.args.inverse:
+                    shape = outputs.shape
+                    
+                    batch_size, seq_len, n_features, height, width = shape
+                    outputs_reshaped = outputs.transpose(0, 1, 3, 4, 2).reshape(-1, n_features)
+                    batch_y_reshaped = batch_y.transpose(0, 1, 3, 4, 2).reshape(-1, n_features)
+
+                    outputs_inv = test_data.inverse_transform(outputs_reshaped)
+                    batch_y_inv = test_data.inverse_transform(batch_y_reshaped)
+
+                    outputs = outputs_inv.reshape(batch_size, seq_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
+                    batch_y = batch_y_inv.reshape(batch_size, seq_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
+                    
+
+                pred = outputs
+                true = batch_y
+
+                preds.append(pred)
+                trues.append(true)
+        
+        preds = np.concatenate(preds, axis=0)
+        trues = np.concatenate(trues, axis=0)
+
+        folder_path = './results/' + setting + '/'
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+        
+        mae, mse, rmse= metric(preds, trues)
+        print('mse:{}, mae:{}, rmse:{}'.format(mse, mae, rmse))
+        f = open("result_long_term_forecast.txt", 'a')
+        f.write(setting + "  \n")
+        f.write('mse:{}, mae:{}'.format(mse, mae))
+        f.write('\n')
+        f.write('\n')
+        f.close()
 
 
