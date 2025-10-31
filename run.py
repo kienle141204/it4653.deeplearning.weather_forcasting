@@ -77,13 +77,15 @@ def main():
     if args.is_training:
         for ii in range(args.itr):
             # setting record of experiments
-            setting = '{}_sl{}_ll{}_pl{}_{}'.format(
+            setting = '{}_sl{}_pl{}_{}_lr{}_ep{}'.format(
                         args.model,
                         # args.data,
                         args.seq_len,
-                        args.label_len,
+                        # args.label_len,
                         args.pred_len,
-                        ii)
+                        ii,
+                        args.learning_rate,
+                        args.train_epochs)
 
             exp = Exp_Long_Term_Forecasting(args)
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
@@ -99,13 +101,15 @@ def main():
             torch.cuda.empty_cache()
     else:
         ii = 0
-        setting = '{}_sl{}_ll{}_pl{}_{}'.format(
-            args.model,
-            # args.data,
-            args.seq_len,
-            args.label_len,
-            args.pred_len,
-            ii)
+        setting = '{}_sl{}_pl{}_{}_lr{}_ep{}'.format(
+                    args.model,
+                    # args.data,
+                    args.seq_len,
+                    # args.label_len,
+                    args.pred_len,
+                    ii,
+                    args.learning_rate,
+                    args.train_epochs)
 
         exp = Exp_Long_Term_Forecasting(args)
         # print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))

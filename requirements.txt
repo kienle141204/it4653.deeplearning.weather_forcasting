@@ -1,6 +1,7 @@
-# pandas 
-# numpy
-# matplotlib
-# scikit-learn
-# torch
-# timm
+pandas 
+numpy
+matplotlib
+scikit-learn
+torch
+timm
+einops

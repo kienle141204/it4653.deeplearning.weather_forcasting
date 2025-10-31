@@ -19,4 +19,5 @@ venv
 *.zip
 checkpoints/
 
+.tmp.*
 kernel-metadata.json

@@ -1,14 +1,13 @@
 import os
 import torch
-from models import ConvLSTM, SwinLSTM, SwinLSTMDeep
+from models import ConvLSTM, SwinLSTM
 
 class Exp_Basic(object):
     def __init__(self, args):
         self.args = args
         self.model_dict = {
             'ConvLSTM': ConvLSTM,
-            'SwinLSTM': SwinLSTM,
-            'SwinLSTMDeep': SwinLSTMDeep
+            'SwinLSTM': SwinLSTM
         }
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
