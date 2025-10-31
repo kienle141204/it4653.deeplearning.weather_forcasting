@@ -20,4 +20,6 @@ venv
 checkpoints/
 
 .tmp.*
-kernel-metadata.json
+kernel-metadata.json    
+scripts/
+scripts
