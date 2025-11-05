@@ -32,7 +32,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
     
     def _create_scheduler(self, optimizer):
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=5,
+            optimizer, mode='min', factor=0.5, patience=self.args.lr_patience,
             # verbose=True
         )
         return scheduler
@@ -67,7 +67,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         scheduler = self._create_scheduler(optimizer)
         criterion = self._create_criterion()
 
-        patience = 3  # Early stopping patience
+        patience = self.args.early_stop_patience  # Early stopping patience
         patience_counter = 0
 
         train_steps = len(train_loader)
@@ -175,11 +175,11 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
         
-        mae, mse, rmse= metric(preds, trues)
-        print('mse:{}, mae:{}, rmse:{}'.format(mse, mae, rmse))
+        mae, mse, rmse, mape= metric(preds, trues)
+        print('mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
         f = open("result_long_term_forecast.txt", 'a')
         f.write(setting + "  \n")
-        f.write('mse:{}, mae:{}'.format(mse, mae))
+        f.write('mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
         f.write('\n')
         f.write('\n')
         f.close()

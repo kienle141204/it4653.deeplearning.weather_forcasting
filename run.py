@@ -1,8 +1,19 @@
 import argparse
+
+import argparse
 from exp.exp_long_term_forecasting import Exp_Long_Term_Forecasting
 import torch
+import warnings
+import random
+import numpy as np
+
+warnings.filterwarnings('ignore')
 
 def main():
+    seed = 2025
+    random.seed(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
     parser = argparse.ArgumentParser(description='Run Weather Forecasting Experiment')
     # basic config
     parser.add_argument('--grid_size', type=tuple, default=(16, 16), help='grid size of the data')
@@ -16,9 +27,8 @@ def main():
     # parser.add_argument('--data', type=str, required=True, default='custom', help='dataset type')
     parser.add_argument('--root_path', type=str, default='./data/data.csv', help='root path of the data file')
     parser.add_argument('--data_path', type=str, default='./data/data.csv', help='data csv file')
-    parser.add_argument('--features', type=str, default='M',
-                        help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
-    parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
+    parser.add_argument('--features', action='store_false' , default=True, help='')
+    parser.add_argument('--target', type=str, default='t2m', help='target feature in S or MS task')
     parser.add_argument('--freq', type=str, default='h',
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
@@ -32,7 +42,7 @@ def main():
     # ConvLSTM parameters
     parser.add_argument('--input_channels', type=int, default=7, help='input dimension')
     parser.add_argument('--hidden_channels', type=int, nargs='+', default=[64, 128], help='hidden dimensions for ConvLSTM layers')
-    parser.add_argument('--kernel_size', type=int, nargs='+', default=5, help='kernel size for ConvLSTM layers')
+    parser.add_argument('--kernel_size', type=int, default=5, help='kernel size for ConvLSTM layers')
     parser.add_argument('--num_layers', type=int, default=2, help='number of ConvLSTM layers')
     parser.add_argument('--bias', action='store_true', help='whether to use bias in ConvLSTM layers', default=False)
     parser.add_argument('--batch_first', action='store_true', help='whether batch is first dimension', default=True)
@@ -42,12 +52,12 @@ def main():
     parser.add_argument('--input_img_size', default=16, type=int, help='Input image size')
     parser.add_argument('--patch_size', default=2, type=int, help='Patch size of input images')
     parser.add_argument('--embed_dim', default=128, type=int, help='Patch embedding dimension')
-    parser.add_argument('--depths', default=[12], type=int, help='Depth of Swin Transformer layer for SwinLSTM-B')
+    parser.add_argument('--depths', default=[6], type=int, help='Depth of Swin Transformer layer for SwinLSTM-B')
     parser.add_argument('--depths_down', default=[2, 6], type=int, help='Downsample of SwinLSTM-D')
     parser.add_argument('--depths_up', default=[6, 2], type=int, help='Upsample of SwinLSTM-D')
     parser.add_argument('--heads_number', default=[4, 8], type=int,
                         help='Number of attention heads in different layers')
-    parser.add_argument('--window_size', default=4, type=int, help='Window size of Swin Transformer layer')
+    parser.add_argument('--window_size', default=2, type=int, help='Window size of Swin Transformer layer')
     parser.add_argument('--drop_rate', default=0., type=float, help='Dropout rate')
     parser.add_argument('--attn_drop_rate', default=0., type=float, help='Attention dropout rate')
     parser.add_argument('--drop_path_rate', default=0.1, type=float, help='Stochastic depth rate')
@@ -63,6 +73,8 @@ def main():
     parser.add_argument('--loss', type=str, default='MSE', help='loss function')
     parser.add_argument('--lradj', type=str, default='type1', help='adjust learning rate')
     parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=False)
+    parser.add_argument('--lr_patience', type=int, default=2)
+    parser.add_argument('--early_stop_patience', type=int, default=5)
 
     # GPU
     parser.add_argument('--use_gpu', type=bool, default=True, help='use gpu')
@@ -77,15 +89,24 @@ def main():
     if args.is_training:
         for ii in range(args.itr):
             # setting record of experiments
-            setting = '{}_sl{}_pl{}_{}_lr{}_ep{}'.format(
+            setting = '{}_sl{}_pl{}_lr{}_ep{}'.format(
                         args.model,
                         # args.data,
                         args.seq_len,
                         # args.label_len,
                         args.pred_len,
-                        ii,
                         args.learning_rate,
                         args.train_epochs)
+            if args.model == 'ConvLSTM':
+                setting += '_ks{}_nl{}'.format(
+                    args.kernel_size,
+                    args.num_layers
+                )
+            else:
+                setting += '_ps_{}_depths_{}'.format(
+                    args.patch_size,
+                    args.depths
+                )
 
             exp = Exp_Long_Term_Forecasting(args)
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
@@ -101,15 +122,21 @@ def main():
             torch.cuda.empty_cache()
     else:
         ii = 0
-        setting = '{}_sl{}_pl{}_{}_lr{}_ep{}'.format(
-                    args.model,
-                    # args.data,
-                    args.seq_len,
-                    # args.label_len,
-                    args.pred_len,
-                    ii,
-                    args.learning_rate,
-                    args.train_epochs)
+        setting = '{}_sl{}_pl{}_lr{}_ep{}'.format(
+                        args.model,
+                        # args.data,
+                        args.seq_len,
+                        # args.label_len,
+                        args.pred_len,
+                        args.learning_rate,
+                        args.train_epochs)
+        if args.model == 'ConvLSTM':
+            setting += '_ks{}_nl{}'.format(
+                args.kernel_size,
+                args.num_layers
+            )
+        else:
+            setting += ''
 
         exp = Exp_Long_Term_Forecasting(args)
         # print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))

@@ -1,6 +1,6 @@
 import torch 
 from torch import nn
-from layers.SwinLSTMBase import SwinLSTM
+from layers.SwinLSTM import SwinLSTM
 
 class Model(nn.Module):
     def __init__(self, configs):
