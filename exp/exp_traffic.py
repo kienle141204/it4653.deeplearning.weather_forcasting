@@ -1,5 +1,5 @@
 from exp.exp_basic import Exp_Basic
-from data_provider.data_factory import data_provider
+from data_provider.data_factory import data_provider, traffic_data_provider
 import torch
 from torch import optim
 import time 
@@ -20,35 +20,11 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         
 
     def _build_model(self):
-        # Get dataset info to determine channel groups
-        train_loader, train_dataset = self._get_data(flag='train')
-        col_names = train_dataset.col_names
-        std_cols = train_dataset.std_cols
-        minmax_cols = train_dataset.minmax_cols
-        robust_cols = train_dataset.robust_cols
-        tcc_cols = train_dataset.tcc_cols
-        
-        std_cols_indices = [col_names.index(col) for col in std_cols]
-        minmax_cols_indices = [col_names.index(col) for col in minmax_cols]
-        robust_cols_indices = [col_names.index(col) for col in robust_cols]
-        tcc_cols_indices = [col_names.index(col) for col in tcc_cols]
-        
-        self.args.std_cols_indices = std_cols_indices
-        self.args.minmax_cols_indices = minmax_cols_indices
-        self.args.robust_cols_indices = robust_cols_indices
-        self.args.tcc_cols_indices = tcc_cols_indices
-        
-        self.args.num_std = len(std_cols_indices)
-        self.args.num_minmax = len(minmax_cols_indices)
-        self.args.num_robust = len(robust_cols_indices)
-        self.args.num_tcc = len(tcc_cols_indices)
-
         model = self.model_dict[self.args.model].Model(self.args).float()
-
         return model
 
     def _get_data(self, flag):
-        data_loader, dataset = data_provider(self.args, flag)
+        data_loader, dataset = traffic_data_provider(self.args, flag)
         return data_loader, dataset
     
     def _create_optimizer(self):
@@ -68,32 +44,18 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         return criterion
     
     def vali(self, vali_data, vali_loader, criterion):
-        col_names = vali_data.col_names
-        std_cols = vali_data.std_cols
-        minmax_cols = vali_data.minmax_cols
-        robust_cols = vali_data.robust_cols
-
-        std_cols_indices = [col_names.index(col) for col in std_cols]
-        minmax_cols_indices = [col_names.index(col) for col in minmax_cols] 
-        robust_cols_indices = [col_names.index(col) for col in robust_cols]
-        tcc_cols_indices = [col_names.index(col) for col in col_names if col not in std_cols + minmax_cols + robust_cols]
-
         total_loss = []
         self.model.eval()
         with torch.no_grad():
-            for index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp  in vali_loader:
+            for index, seq_x, seq_y  in vali_loader:
                 seq_x = seq_x.to(self.device)
                 seq_y = seq_y.to(self.device)
-                seq_x_mark = seq_x_mark.to(self.device)
-                seq_y_mark = seq_y_mark.to(self.device)
+                # seq_x_mark = seq_x_mark.to(self.device)
+                # seq_y_mark = seq_y_mark.to(self.device)
 
                 output = self.model(seq_x)
-                std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
-                minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
-                robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
-                tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
 
-                loss = std_loss + minmax_loss + robust_loss + tcc_loss
+                loss = criterion(output, seq_y)
                 total_loss.append(loss.item())
         total_loss = np.average(total_loss)
         self.model.train()
@@ -104,18 +66,18 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         vali_loader, vali_dataset = self._get_data(flag="val")
         test_loader, test_dataset = self._get_data(flag="test")
 
-        col_names = train_dataset.col_names
-        std_cols = train_dataset.std_cols
-        minmax_cols = train_dataset.minmax_cols
-        robust_cols = train_dataset.robust_cols
+        # col_names = train_dataset.col_names
+        # std_cols = train_dataset.std_cols
+        # minmax_cols = train_dataset.minmax_cols
+        # robust_cols = train_dataset.robust_cols
 
-        std_cols_indices = [col_names.index(col) for col in std_cols]
-        minmax_cols_indices = [col_names.index(col) for col in minmax_cols] 
-        robust_cols_indices = [col_names.index(col) for col in robust_cols]
-        tcc_cols_indices = [col_names.index(col) for col in col_names if col not in std_cols + minmax_cols + robust_cols]
+        # std_cols_indices = [col_names.index(col) for col in std_cols]
+        # minmax_cols_indices = [col_names.index(col) for col in minmax_cols] 
+        # robust_cols_indices = [col_names.index(col) for col in robust_cols]
+        # tcc_cols_indices = [col_names.index(col) for col in col_names if col not in std_cols + minmax_cols + robust_cols]
 
-        _, seq_x_train, _, _, _, _ = next(iter(train_loader))
-        _, seq_x_test, _, _, _, _ = next(iter(test_loader))
+        _, seq_x_train, _ = next(iter(train_loader))
+        _, seq_x_test, _= next(iter(test_loader))
         print(f"Shape x_train: {seq_x_train.shape}")
         print(f"Shape x_test: {seq_x_test.shape}")
 
@@ -140,25 +102,24 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
             train_loss = []
 
             epoch_start_time = time.time()
-            for index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp  in train_loader:
+            for index, seq_x, seq_y  in train_loader:
                 iter_count += 1
                 mask_true = schedule_sampling_exp(self.args, iter_count, train_steps)
+                if isinstance(mask_true, np.ndarray):
+                    mask_true = torch.from_numpy(mask_true).float()
+                mask_true = mask_true.to(self.device)
+                # print(f"mask_true shape: {mask_true.shape}")
                 seq_x = seq_x.to(self.device)
                 seq_y = seq_y.to(self.device)
-                seq_x_mark = seq_x_mark.to(self.device)
-                seq_y_mark = seq_y_mark.to(self.device)
+                # seq_x_mark = seq_x_mark.to(self.device)
+                # seq_y_mark = seq_y_mark.to(self.device)
 
                 # print(seq_x.shape, seq_y.shape)
 
                 optimizer.zero_grad()
                 output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
 
-                std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
-                minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
-                robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
-                tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
-
-                loss = std_loss + minmax_loss + robust_loss + tcc_loss
+                loss = criterion(output, seq_y)
 
                 train_loss.append(loss.item())
                 loss.backward()
@@ -194,6 +155,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         folder_path = f'./results/{self.args.model}/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
+        
         test_loader, test_data = self._get_data(flag='test')
         if test:
             print("Loading Model")
@@ -203,12 +165,12 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         trues = []
         self.model.eval()
         with torch.no_grad():
-            for i, (index, batch_x, batch_y, batch_x_mark, batch_y_mark, sq) in enumerate(test_loader):
+            for i, (index, batch_x, batch_y) in enumerate(test_loader):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
 
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
+                # batch_x_mark = batch_x_mark.float().to(self.device)
+                # batch_y_mark = batch_y_mark.float().to(self.device)
 
                 outputs = self.model(batch_x)
 
@@ -234,32 +196,27 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
                 preds.append(pred)
                 trues.append(true)
+
                 if i % 10 == 0:
-                    # print("shape")
-                    # print(batch_x_mark.shape, batch_y_mark.shape)
-                    # print(batch_x_mark[0, :, :].shape, batch_y_mark[0, :, :].shape)
-                    # print(batch_x_mark[0, 0, :].detach().cpu().numpy())
                     visualize(
-                        historical_data=batch_x[0, :, 0, 0, 0].detach().cpu().numpy(),
-                        true_data=true[0, :, 0, 0, 0],
-                        predicted_data=pred[0, :, 0, 0, 0],
-                        x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
-                        y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
-                        title=f"Test Sample {i} - Weather - Forecasting",
+                        historical_data=batch_x[0,:,0, 0, 0].detach().cpu().numpy(),
+                        true_data=batch_y[0,:,0, 0, 0],
+                        predicted_data=outputs[0,:,0, 0, 0],
+                        title=f"Test Sample {i} - Traffic - Forecasting",
                         xlabel="Time Steps",
                         ylabel="Value",
-                        save_path=f"./results/{self.args.model}/{setting}/forecast_sample_{i}.png"
+                        save_path=f"./results/{self.args.model}/{setting}/traffic_sample_{i}.png"
                     )
+
                     visualize_frame(
                         historical_data=batch_x[0, :, 0, :, :].detach().cpu().numpy(),
                         true_data=batch_y[0, :, 0, :, :],   
                         predicted_data=outputs[0, :, 0, :, :],
-                        x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
-                        y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
-                        title=f"Test Sample {i} - Weather - Spatio-Temporal Forecasting",
-                        # xlabel="Future Time Steps",
-                        save_path=f"./results/{self.args.model}/{setting}/weather_spatiotemporal_sample_{i}.png"
+                        title=f"Test Sample {i} - Traffic - Spatio-Temporal Forecasting",
+                        xlabel="Future Time Steps",
+                        save_path=f"./results/{self.args.model}/{setting}/traffic_spatiotemporal_sample_{i}.png"
                     )
+                    
         
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
@@ -273,5 +230,13 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         f.write('\n')
         f.write('\n')
         f.close()
+
+# def to_numpy(tensor_or_array):
+#     if isinstance(tensor_or_array, torch.Tensor):
+#         return tensor_or_array.detach().cpu().numpy()
+#     elif isinstance(tensor_or_array, np.ndarray):
+#         return tensor_or_array
+#     else:
+#         return np.array(tensor_or_array)
 
 

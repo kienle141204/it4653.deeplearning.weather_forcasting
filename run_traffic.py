@@ -1,7 +1,8 @@
 import argparse
 
 import argparse
-from exp.exp_long_term_forecasting import Exp_Long_Term_Forecasting
+# from exp.exp_long_term_forecasting import Exp_Long_Term_Forecasting
+from exp.exp_traffic import Exp_Long_Term_Forecasting
 import torch
 import warnings
 import random
@@ -17,7 +18,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Run Weather Forecasting Experiment')
     # basic config
-    parser.add_argument('--grid_size', type=tuple, default=(16, 16), help='grid size of the data')
+    parser.add_argument('--grid_size', type=tuple, default=(32, 32), help='grid size of the data')
     parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
     # parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
     parser.add_argument('--model', type=str, required=True, default='ConvLSTM',
@@ -26,23 +27,24 @@ def main():
 
     # # data loader
     # parser.add_argument('--data', type=str, required=True, default='custom', help='dataset type')
-    parser.add_argument('--root_path', type=str, default='./data/data.csv', help='root path of the data file')
-    parser.add_argument('--data_path', type=str, default='./data/data.csv', help='data csv file')
+    parser.add_argument('--root_path', type=str, default='./data/BJ13_M32x32_T30_InOut.h5', help='root path of the data file')
+    parser.add_argument('--data_path', type=str, default='./data/BJ13_M32x32_T30_InOut.h5', help='data csv file')
     parser.add_argument('--features', action='store_false' , default=True, help='')
     parser.add_argument('--target', type=str, nargs='+', default=['t2m'], help='target feature in S or MS task')
     parser.add_argument('--freq', type=str, default='h',
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
     parser.add_argument('--use_multi_heads', type=int, default=1, help='number of used feature heads')
+    parser.add_argument('--timeenc', type=int, default=0, help='')
 
     # forecasting task
-    parser.add_argument('--his_len', type=int, default=96, help='input sequence length')
-    parser.add_argument('--label_len', type=int, default=48, help='start token length') # no longer needed in inverted Transformers
-    parser.add_argument('--pred_len', type=int, default=96, help='prediction sequence length')
+    parser.add_argument('--his_len', type=int, default=24, help='input sequence length')
+    # parser.add_argument('--label_len', type=int, default=48, help='start token length') # no longer needed in inverted Transformers
+    parser.add_argument('--pred_len', type=int, default=24, help='prediction sequence length')
 
     # model define
     # ConvLSTM parameters
-    parser.add_argument('--input_channels', type=int, default=7, help='input dimension')
+    parser.add_argument('--input_channels', type=int, default=1, help='input dimension')
     parser.add_argument('--hidden_channels', type=int, nargs='+', default=[64, 128], help='hidden dimensions for ConvLSTM layers')
     parser.add_argument('--num_hidden', type=int, default=[64, 64, 64, 64])
     parser.add_argument('--kernel_size', type=int, default=5, help='kernel size for ConvLSTM layers')
@@ -61,7 +63,7 @@ def main():
 
     # SwinLSTM parameters
     # parser.add_argument('--input_channels', default=1, type=int, help='Number of input image channels')
-    parser.add_argument('--input_img_size', default=16, type=int, help='Input image size')
+    parser.add_argument('--input_img_size', default=32, type=int, help='Input image size')
     parser.add_argument('--patch_size', default=2, type=int, help='Patch size of input images')
     parser.add_argument('--embed_dim', default=128, type=int, help='Patch embedding dimension')
     parser.add_argument('--depths', default=[2], type=int, help='Depth of Swin Transformer layer for SwinLSTM-B')
