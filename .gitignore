@@ -11,6 +11,9 @@ data.*
 
 *.csv
 
+results/
+
+result_long_term_forecast.txt
 
 *.log
 .DS_Store
