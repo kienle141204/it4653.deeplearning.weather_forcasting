@@ -8,7 +8,10 @@ __pycache__/
 test.py
 test1.py
 data.*
-logs/
+
+*.csv
+
+
 *.log
 .DS_Store
 output.*
@@ -23,3 +26,6 @@ checkpoints/
 kernel-metadata.json    
 scripts/
 scripts
+
+wandb
+wandb/

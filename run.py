@@ -33,7 +33,7 @@ def main():
     parser.add_argument('--freq', type=str, default='h',
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
-    parser.add_argument('--use_multi_heads', type=int, default=1, help='number of used feature heads')
+    parser.add_argument('--use_multi_heads', type=int, default=0, help='number of used feature heads')
 
     # forecasting task
     parser.add_argument('--his_len', type=int, default=96, help='input sequence length')
