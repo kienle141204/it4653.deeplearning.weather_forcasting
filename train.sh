@@ -8,7 +8,7 @@ source venv/Scripts/activate
     --features \
     --target 't2m' \
     --learning_rate 1e-3 \
-    --is_training 0 \
+    --is_training 1 \
     --train_epochs 500 \
     --his_len 24 \
     --pred_len 24 \

@@ -142,14 +142,17 @@ def main():
             torch.cuda.empty_cache()
     else:
         ii = 0
-        setting = '{}_sl{}_pl{}_lr{}_ep{}'.format(
+        setting = '{}_sl{}_pl{}_lr{}_ep{}_hd{}_ss{}_mh{}'.format(
                         args.model,
                         # args.data,
                         args.his_len,
                         # args.label_len,
                         args.pred_len,
                         args.learning_rate,
-                        args.train_epochs)
+                        args.train_epochs,
+                        args.hidden_channels,
+                        args.scheduled_sampling,
+                        args.use_multi_heads)
         if not args.features:
             setting += '_in_c{}_ft_{}'.format(
                 args.input_channels,
@@ -161,11 +164,15 @@ def main():
                 args.num_layers
             )
         else:
-            setting += ''
+            setting += '_ps_{}_depths_{}'.format(
+                args.patch_size,
+                args.depths
+            )
+
 
         exp = Exp_Long_Term_Forecasting(args)
-        # print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-        # exp.test(setting, test=1)
+        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+        exp.test(setting, test=1)
         # torch.cuda.empty_cache()
     
     # Here you would typically load your config and start the experiment

@@ -76,7 +76,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         criterion = torch.nn.MSELoss()
         return criterion
     
-    def vali(self, vali_data, vali_loader, criterion):
+    def vali(self, vali_data, vali_loader, criterion, debug=False):
         col_names = vali_data.col_names
         std_cols = vali_data.std_cols
         minmax_cols = vali_data.minmax_cols
@@ -89,14 +89,16 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
         total_loss = []
         self.model.eval()
+        
         with torch.no_grad():
-            for index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp  in vali_loader:
+            for i, (index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp) in enumerate(vali_loader):
                 seq_x = seq_x.to(self.device)
                 seq_y = seq_y.to(self.device)
                 seq_x_mark = seq_x_mark.to(self.device)
                 seq_y_mark = seq_y_mark.to(self.device)
 
                 output = self.model(seq_x)
+
                 std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
                 minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
                 robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
@@ -173,14 +175,22 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                 loss.backward()
                 optimizer.step()
 
-            self.logger.info("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_start_time))
+            self.logger.info("[Train] - epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_start_time))
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_dataset, vali_loader, criterion)
-            test_loss = self.vali(test_dataset, test_loader, criterion)
+            
+            # Debug mode cho epoch đầu tiên
+            debug_mode = (epoch == 0)
+            vali_loss = self.vali(vali_dataset, vali_loader, criterion, debug=debug_mode)
+            test_loss = self.vali(test_dataset, test_loader, criterion, debug=debug_mode)
 
-            wandb.log({"Train Loss": train_loss, "Validation Loss": vali_loss}, step=epoch)
-            self.logger.info("Epoch: {0}, Steps: {1}, Lr: {2} | Train Loss: {3:.7f} Vali Loss: {4:.7f} Test Loss: {5:.7f}".format(
-                epoch + 1, train_steps, optimizer.param_groups[0]['lr'], train_loss, vali_loss, test_loss))
+            wandb.log({"train loss": train_loss, "vali loss": vali_loss}, step=epoch)
+
+            if epoch % 5 == 0:
+                self.logger.info("[Vali] - epoch: {0}, steps: {1}, lr: {2} | [train loss: {3:.7f}] - [vali loss: {4:.7f}] - [test loss: {5:.7f}]".format(
+                    epoch + 1, train_steps, optimizer.param_groups[0]['lr'], train_loss, vali_loss, test_loss))
+            else:
+                self.logger.info("[Vali] - epoch: {0}, steps: {1}, lr: {2} | [train loss: {3:.7f}] - [vali loss: {4:.7f}]".format(
+                    epoch + 1, train_steps, optimizer.param_groups[0]['lr'], train_loss, vali_loss))
             
             scheduler.step(vali_loss)
             
@@ -235,12 +245,12 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                     outputs_inv = test_data.inverse_transform(outputs_reshaped)
                     batch_y_inv = test_data.inverse_transform(batch_y_reshaped)
 
-                    outputs = outputs_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
-                    batch_y = batch_y_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
+                    outputs_inv = outputs_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
+                    batch_y_inv = batch_y_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
                     
 
-                pred = outputs
-                true = batch_y
+                pred = outputs_inv
+                true = batch_y_inv
 
                 preds.append(pred)
                 trues.append(true)
@@ -251,8 +261,8 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                     # print(batch_x_mark[0, 0, :].detach().cpu().numpy())
                     visualize(
                         historical_data=batch_x[0, :, 0, 0, 0].detach().cpu().numpy(),
-                        true_data=true[0, :, 0, 0, 0],
-                        predicted_data=pred[0, :, 0, 0, 0],
+                        true_data=batch_y[0, :, 0, 0, 0],
+                        predicted_data=outputs[0, :, 0, 0, 0],
                         x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
                         y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
                         title=f"{self.model.model_name}-Test Sample {i}-Weather Forecasting",
@@ -276,10 +286,10 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
         
         mae, mse, rmse, mape= metric(preds, trues)
-        self.logger.info('Test - mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
+        self.logger.info('Test - [mse: {}], [mae: {}], [rmse: {}], [mape: {}]'.format(mse, mae, rmse, mape))
         f = open("result_long_term_forecast.txt", 'a')
         f.write(setting + "  \n")
-        f.write('Test - mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
+        f.write('Test - [mse: {}], [mae: {}], [rmse: {}], [mape: {}]'.format(mse, mae, rmse, mape))
         f.write('\n')
         f.write('\n')
         f.close()
