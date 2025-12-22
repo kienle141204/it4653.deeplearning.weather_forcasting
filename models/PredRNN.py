@@ -7,6 +7,7 @@ class Model(nn.Module):
     def __init__(self, configs):
         super(Model, self).__init__()
 
+        self.model_name = "PredRNN"
         self.configs = configs
         self.frame_channel = configs.input_channels
         self.num_layers = configs.num_layers
