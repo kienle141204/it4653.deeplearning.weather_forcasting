@@ -8,7 +8,13 @@ __pycache__/
 test.py
 test1.py
 data.*
-logs/
+
+*.csv
+
+results/
+
+result_long_term_forecast.txt
+
 *.log
 .DS_Store
 output.*
@@ -23,3 +29,6 @@ checkpoints/
 kernel-metadata.json    
 scripts/
 scripts
+
+wandb
+wandb/

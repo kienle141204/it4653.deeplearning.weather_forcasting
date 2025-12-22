@@ -3,6 +3,7 @@ from data_provider.data_factory import data_provider
 import torch
 from torch import optim
 import time 
+from datetime import datetime
 import numpy as np
 import copy
 import warnings
@@ -10,6 +11,11 @@ import os
 from utils.metrics import metric
 from utils.schedule_sampling import schedule_sampling_exp, reserve_schedule_sampling_exp
 from utils.visualize import visualize, visualize_frame
+from utils.logger import getlogger
+import wandb 
+import os 
+wandb.login(key = os.getenv('WANDB_KEY'))
+
 
 # Bỏ qua tất cả các cảnh báo
 warnings.filterwarnings('ignore')
@@ -17,6 +23,9 @@ warnings.filterwarnings('ignore')
 class Exp_Long_Term_Forecasting(Exp_Basic):
     def __init__(self, args):
         super(Exp_Long_Term_Forecasting, self).__init__(args)
+        wandb.init(project="DL-project", name=f"{self.model.model_name}_{datetime.now().strftime('%Y-%m-%d %H:%M')}", config=vars(args))
+        self.logger = getlogger(logpath='./logs/experiment.log', name='Experiment')
+        self.logger.info(f"Model: {self.model}")
         
 
     def _build_model(self):
@@ -58,7 +67,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
     
     def _create_scheduler(self, optimizer):
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=self.args.lr_patience,
+            optimizer, mode='min', factor=0.1, patience=self.args.lr_patience,
             # verbose=True
         )
         return scheduler
@@ -116,8 +125,8 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
         _, seq_x_train, _, _, _, _ = next(iter(train_loader))
         _, seq_x_test, _, _, _, _ = next(iter(test_loader))
-        print(f"Shape x_train: {seq_x_train.shape}")
-        print(f"Shape x_test: {seq_x_test.shape}")
+        self.logger.info(f"Shape x_train: {seq_x_train.shape}")
+        self.logger.info(f"Shape x_test: {seq_x_test.shape}")
 
         optimizer = self._create_optimizer()
         scheduler = self._create_scheduler(optimizer)
@@ -164,13 +173,14 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                 loss.backward()
                 optimizer.step()
 
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_start_time))
+            self.logger.info("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_start_time))
             train_loss = np.average(train_loss)
             vali_loss = self.vali(vali_dataset, vali_loader, criterion)
             test_loss = self.vali(test_dataset, test_loader, criterion)
 
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            wandb.log({"Train Loss": train_loss, "Validation Loss": vali_loss}, step=epoch)
+            self.logger.info("Epoch: {0}, Steps: {1}, Lr: {2} | Train Loss: {3:.7f} Vali Loss: {4:.7f} Test Loss: {5:.7f}".format(
+                epoch + 1, train_steps, optimizer.param_groups[0]['lr'], train_loss, vali_loss, test_loss))
             
             scheduler.step(vali_loss)
             
@@ -179,12 +189,12 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                 best_model = copy.deepcopy(self.model)
                 best_valid_loss = vali_loss
                 patience_counter = 0
-                print(f"New best model! Validation loss: {best_valid_loss:.7f}")
+                self.logger.info(f"New best model! Validation loss: {best_valid_loss:.7f}")
             else:
                 patience_counter += 1
-                print(f"Early stopping counter: {patience_counter} out of {patience}")
+                self.logger.info(f"Early stopping counter: {patience_counter} out of {patience}")
                 if patience_counter >= patience:
-                    print(f"Early stopping at epoch {epoch + 1}")
+                    self.logger.info(f"Early stopping at epoch {epoch + 1}")
                     break
 
         best_model_path = path + '/' + 'checkpoint.pth'
@@ -196,7 +206,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
             os.makedirs(folder_path)
         test_loader, test_data = self._get_data(flag='test')
         if test:
-            print("Loading Model")
+            self.logger.info("Loading Model")
             self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + self.args.model  + '/' + setting , 'checkpoint.pth')))
         
         preds = []
@@ -245,7 +255,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                         predicted_data=pred[0, :, 0, 0, 0],
                         x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
                         y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
-                        title=f"Test Sample {i} - Weather - Forecasting",
+                        title=f"{self.model.model_name}-Test Sample {i}-Weather Forecasting",
                         xlabel="Time Steps",
                         ylabel="Value",
                         save_path=f"./results/{self.args.model}/{setting}/forecast_sample_{i}.png"
@@ -256,7 +266,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                         predicted_data=outputs[0, :, 0, :, :],
                         x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
                         y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
-                        title=f"Test Sample {i} - Weather - Spatio-Temporal Forecasting",
+                        title=f"{self.model.model_name}-Test Sample {i}-Weather Forecasting",
                         # xlabel="Future Time Steps",
                         save_path=f"./results/{self.args.model}/{setting}/weather_spatiotemporal_sample_{i}.png"
                     )
@@ -266,10 +276,10 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
         
         mae, mse, rmse, mape= metric(preds, trues)
-        print('mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
+        self.logger.info('Test - mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
         f = open("result_long_term_forecast.txt", 'a')
         f.write(setting + "  \n")
-        f.write('mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
+        f.write('Test - mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
         f.write('\n')
         f.write('\n')
         f.close()

@@ -4,7 +4,6 @@ import torch.nn as nn
 class SpatioTemporalLSTMCell(nn.Module):
     def __init__(self, in_channel, num_hidden, width, filter_size, stride, layer_norm):
         super(SpatioTemporalLSTMCell, self).__init__()
-
         self.num_hidden = num_hidden
         self.padding = filter_size // 2
         self._forget_bias = 1.0
