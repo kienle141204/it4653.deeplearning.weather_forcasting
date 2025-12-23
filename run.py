@@ -74,6 +74,15 @@ def main():
     parser.add_argument('--attn_drop_rate', default=0., type=float, help='Attention dropout rate')
     parser.add_argument('--drop_path_rate', default=0.1, type=float, help='Stochastic depth rate')
 
+    # GraphWaveNet parameters
+    parser.add_argument('--dropout', type=float, default=0.3, help='dropout rate for GraphWaveNet')
+    parser.add_argument('--adj_method', type=str, default='distance', choices=['distance', 'knn'],
+                        help='method to build adjacency matrix: distance or knn')
+    parser.add_argument('--adj_threshold', type=float, default=1.5, 
+                        help='distance threshold for adjacency matrix (distance method)')
+    parser.add_argument('--adj_k', type=int, default=8,
+                        help='number of nearest neighbors for adjacency matrix (knn method)')
+
     # optimization
     parser.add_argument('--num_workers', type=int, default=2, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')

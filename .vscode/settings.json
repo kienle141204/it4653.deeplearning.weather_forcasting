@@ -1,0 +1,16 @@
+{
+    // Ẩn folder .history khỏi file explorer
+    "files.exclude": {
+        "**/.history": true
+    },
+    
+    // Ẩn các file history
+    "files.watcherExclude": {
+        "**/.history/**": true
+    },
+    
+    // Tắt Local History extension
+    "local-history.enabled": false,
+    "local-history.path": null
+}
+

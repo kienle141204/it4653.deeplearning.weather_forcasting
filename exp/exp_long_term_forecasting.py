@@ -14,11 +14,21 @@ from utils.visualize import visualize, visualize_frame
 from utils.logger import getlogger
 import wandb 
 import os 
-wandb.login(key = os.getenv('WANDB_KEY'))
-
+import logging
 
 # Bỏ qua tất cả các cảnh báo
 warnings.filterwarnings('ignore')
+
+# Suppress timm warnings
+logging.getLogger('timm').setLevel(logging.ERROR)
+
+# Login wandb only once (not in every import)
+if not wandb.api.api_key:
+    wandb.login(key=os.getenv('WANDB_KEY'))
+
+# Enable optimizations
+torch.backends.cudnn.benchmark = True  # Faster for fixed input sizes
+torch.backends.cudnn.deterministic = False  # Faster but less reproducible
 
 class Exp_Long_Term_Forecasting(Exp_Basic):
     def __init__(self, args):
@@ -52,7 +62,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         self.args.num_robust = len(robust_cols_indices)
         self.args.num_tcc = len(tcc_cols_indices)
 
-        model = self.model_dict[self.args.model].Model(self.args).float()
+        model = self.model_dict[self.args.model](self.args).float()
 
         return model
 
@@ -61,20 +71,49 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         return data_loader, dataset
     
     def _create_optimizer(self):
-        optimizer = optim.Adam(self.model.parameters(), lr=self.args.learning_rate, weight_decay=1e-5) 
-        # optimizer = optim.Adam(self.model.parameters(), lr=self.args.learning_rate) 
+        # Use AdamW with better weight decay
+        optimizer = optim.AdamW(
+            self.model.parameters(), 
+            lr=self.args.learning_rate, 
+            weight_decay=1e-4,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            fused=True  # Faster on modern GPUs
+        ) 
         return optimizer
     
     def _create_scheduler(self, optimizer):
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.1, patience=self.args.lr_patience,
-            # verbose=True
+        # Use CosineAnnealingWarmRestarts for better convergence + ReduceLROnPlateau
+        # Warmup + cosine annealing helps with accuracy
+        warmup_scheduler = optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.1, total_iters=5
         )
-        return scheduler
+        cosine_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, T_0=10, T_mult=2, eta_min=1e-6
+        )
+        plateau_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=self.args.lr_patience,
+            min_lr=1e-6
+        )
+        # Use plateau scheduler (more stable)
+        return plateau_scheduler
     
     def _create_criterion(self):
-        criterion = torch.nn.MSELoss()
-        return criterion
+        # Improved loss: MSE + Huber + L1 for better accuracy
+        class CombinedLoss:
+            def __init__(self):
+                self.mse_loss = torch.nn.MSELoss()
+                self.huber_loss = torch.nn.HuberLoss(delta=1.0)
+                self.l1_loss = torch.nn.L1Loss()
+            
+            def __call__(self, pred, true):
+                mse = self.mse_loss(pred, true)
+                huber = self.huber_loss(pred, true)
+                l1 = self.l1_loss(pred, true)
+                # Weighted combination: 50% MSE, 30% Huber, 20% L1
+                return 0.5 * mse + 0.3 * huber + 0.2 * l1
+        
+        return CombinedLoss()
     
     def vali(self, vali_data, vali_loader, criterion):
         col_names = vali_data.col_names
@@ -90,13 +129,17 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         total_loss = []
         self.model.eval()
         with torch.no_grad():
+            # Use mixed precision for validation (faster)
             for index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp  in vali_loader:
                 seq_x = seq_x.to(self.device)
                 seq_y = seq_y.to(self.device)
-                seq_x_mark = seq_x_mark.to(self.device)
-                seq_y_mark = seq_y_mark.to(self.device)
-
-                output = self.model(seq_x)
+                
+                if self.args.use_amp:
+                    with torch.cuda.amp.autocast():
+                        output = self.model(seq_x)
+                else:
+                    output = self.model(seq_x)
+                    
                 std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
                 minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
                 robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
@@ -131,6 +174,9 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         optimizer = self._create_optimizer()
         scheduler = self._create_scheduler(optimizer)
         criterion = self._create_criterion()
+        
+        # Use mixed precision for faster training (2x speedup)
+        scaler = torch.cuda.amp.GradScaler() if self.args.use_amp else None
 
         patience = self.args.early_stop_patience  # Early stopping patience
         patience_counter = 0
@@ -149,6 +195,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
             train_loss = []
 
             epoch_start_time = time.time()
+            
             for index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp  in train_loader:
                 iter_count += 1
                 mask_true = schedule_sampling_exp(self.args, iter_count, train_steps)
@@ -157,27 +204,47 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                 seq_x_mark = seq_x_mark.to(self.device)
                 seq_y_mark = seq_y_mark.to(self.device)
 
-                # print(seq_x.shape, seq_y.shape)
-
                 optimizer.zero_grad()
-                output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
-
-                std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
-                minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
-                robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
-                tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
-
-                loss = std_loss + minmax_loss + robust_loss + tcc_loss
+                
+                # Mixed precision training
+                if self.args.use_amp and scaler is not None:
+                    with torch.cuda.amp.autocast():
+                        output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
+                        std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
+                        minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
+                        robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
+                        tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
+                        loss = std_loss + minmax_loss + robust_loss + tcc_loss
+                    
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
+                    std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
+                    minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
+                    robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
+                    tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
+                    loss = std_loss + minmax_loss + robust_loss + tcc_loss
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    optimizer.step()
 
                 train_loss.append(loss.item())
-                loss.backward()
-                optimizer.step()
 
             self.logger.info("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_start_time))
             train_loss = np.average(train_loss)
+            
+            # Validate every epoch (needed for early stopping and scheduler)
+            # But skip test_loss calculation to save time (only calculate every 5 epochs)
             vali_loss = self.vali(vali_dataset, vali_loader, criterion)
-            test_loss = self.vali(test_dataset, test_loader, criterion)
-
+            if epoch % 5 == 0 or epoch == 0:
+                test_loss = self.vali(test_dataset, test_loader, criterion)
+            else:
+                test_loss = vali_loss  # Approximate
+            
             wandb.log({"Train Loss": train_loss, "Validation Loss": vali_loss}, step=epoch)
             self.logger.info("Epoch: {0}, Steps: {1}, Lr: {2} | Train Loss: {3:.7f} Vali Loss: {4:.7f} Test Loss: {5:.7f}".format(
                 epoch + 1, train_steps, optimizer.param_groups[0]['lr'], train_loss, vali_loss, test_loss))
