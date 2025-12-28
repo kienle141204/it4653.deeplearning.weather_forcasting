@@ -9,6 +9,14 @@ import numpy as np
 
 warnings.filterwarnings('ignore')
 
+def tuple_type(strings):
+    """Parse tuple from command line argument"""
+    if isinstance(strings, tuple):
+        return strings  # Already a tuple
+    strings = strings.replace("(", "").replace(")", "").strip()
+    mapped_int = map(int, strings.split(","))
+    return tuple(mapped_int)
+
 def main():
     seed = 2025
     random.seed(seed)
@@ -17,7 +25,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Run Weather Forecasting Experiment')
     # basic config
-    parser.add_argument('--grid_size', type=tuple, default=(16, 16), help='grid size of the data')
+    parser.add_argument('--grid_size', type=tuple_type, default=(16, 16), help='grid size of the data (format: 16,16 or (16,16))')
     parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
     # parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
     parser.add_argument('--model', type=str, required=True, default='ConvLSTM',
