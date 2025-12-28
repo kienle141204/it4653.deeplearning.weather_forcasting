@@ -26,6 +26,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         wandb.init(project="DL-project", name=f"{self.model.model_name}_{datetime.now().strftime('%Y-%m-%d %H:%M')}", config=vars(args))
         self.logger = getlogger(logpath='./logs/experiment.log', name='Experiment')
         self.logger.info(f"Model: {self.model}")
+        self.args = args 
         
 
     def _build_model(self):
@@ -127,7 +128,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
         _, seq_x_train, _, _, _, _ = next(iter(train_loader))
         _, seq_x_test, _, _, _, _ = next(iter(test_loader))
-        self.logger.info(f"Shape x_train: {seq_x_train.shape}")
+        self.logger.info(f"Shape x_train: {seq_x_train.shape}") # (batch_size, seq_len, feature_dim, height, width)
         self.logger.info(f"Shape x_test: {seq_x_test.shape}")
 
         optimizer = self._create_optimizer()
@@ -225,6 +226,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
         test_loader, test_data = self._get_data(flag='test')
+        col_names = test_data.col_names 
         if test:
             self.logger.info("Loading Model")
             self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + self.args.model  + '/' + setting , 'checkpoint.pth')))
@@ -244,6 +246,7 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
+                batch_x = batch_x.detach().cpu().numpy()
 
                 if self.args.inverse:
                     shape = outputs.shape
@@ -251,12 +254,15 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                     batch_size, his_len, n_features, height, width = shape
                     outputs_reshaped = outputs.transpose(0, 1, 3, 4, 2).reshape(-1, n_features)
                     batch_y_reshaped = batch_y.transpose(0, 1, 3, 4, 2).reshape(-1, n_features)
+                    batch_x_reshaped = batch_x.transpose(0, 1, 3, 4, 2).reshape(-1, n_features)
 
+                    batch_x_inv = test_data.inverse_transform(batch_x_reshaped)
                     outputs_inv = test_data.inverse_transform(outputs_reshaped)
                     batch_y_inv = test_data.inverse_transform(batch_y_reshaped)
 
+                    batch_x_inv = batch_x_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
                     outputs_inv = outputs_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
-                    batch_y_inv = batch_y_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
+                    batch_y_inv = batch_y_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3) # (batch_size, his_len, n_features, height, width)
                     
                     pred = outputs_inv
                     true = batch_y_inv
@@ -272,27 +278,45 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                     # print(batch_x_mark.shape, batch_y_mark.shape)
                     # print(batch_x_mark[0, :, :].shape, batch_y_mark[0, :, :].shape)
                     # print(batch_x_mark[0, 0, :].detach().cpu().numpy())
-                    visualize(
-                        historical_data=batch_x[0, :, 0, 0, 0].detach().cpu().numpy(),
-                        true_data=batch_y[0, :, 0, 0, 0],
-                        predicted_data=outputs[0, :, 0, 0, 0],
-                        x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
-                        y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
-                        title=f"{self.model.model_name}-Test Sample {i}-Weather Forecasting",
-                        xlabel="Time Steps",
-                        ylabel="Value",
-                        save_path=f"./results/{self.args.model}/{setting}/forecast_sample_{i}.png"
-                    )
-                    visualize_frame(
-                        historical_data=batch_x[0, :, 0, :, :].detach().cpu().numpy(),
-                        true_data=batch_y[0, :, 0, :, :],   
-                        predicted_data=outputs[0, :, 0, :, :],
-                        x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
-                        y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
-                        title=f"{self.model.model_name}-Test Sample {i}-Weather Forecasting",
-                        # xlabel="Future Time Steps",
-                        save_path=f"./results/{self.args.model}/{setting}/weather_spatiotemporal_sample_{i}.png"
-                    )
+                    for index, col in enumerate(col_names):
+                        col_folder = f"./results/{self.args.model}/{setting}/{col}"
+                        if not os.path.exists(col_folder):
+                            os.makedirs(col_folder)
+                        
+                        if self.args.inverse:
+                            visualize(
+                                historical_data=batch_x_inv[0, :, index, 0, 0],
+                                true_data=batch_y_inv[0, :, index, 0, 0],
+                                predicted_data=outputs_inv[0, :, index, 0, 0],
+                                x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
+                                y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
+                                title=f"{self.model.model_name}-{col}-Weather Forecasting",
+                                xlabel="Time Steps",
+                                ylabel="Value",
+                                save_path=f"{col_folder}/forecast_sample_{i}_{col}.png"
+                            )
+                        else:
+                            visualize(
+                                historical_data=batch_x[0, :, index, 0, 0],
+                                true_data=batch_y[0, :, index, 0, 0],
+                                predicted_data=outputs[0, :, index, 0, 0],
+                                x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
+                                y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
+                                title=f"{self.model.model_name}-{col}-Weather Forecasting",
+                                xlabel="Time Steps",
+                                ylabel="Value",
+                                save_path=f"{col_folder}/forecast_sample_{i}_{col}.png"
+                            )
+                        
+                        visualize_frame(
+                            historical_data=batch_x[0, :, index, :, :],
+                            true_data=batch_y[0, :, index, :, :],   
+                            predicted_data=outputs[0, :, index, :, :],  
+                            x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
+                            y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),    
+                            title=f"{self.model.model_name}-{col}-Weather Forecasting",
+                            save_path=f"{col_folder}/weather_spatiotemporal_sample_{i}_{col}.png"
+                        )
         
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
