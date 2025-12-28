@@ -75,7 +75,7 @@ def main():
     parser.add_argument('--drop_path_rate', default=0.1, type=float, help='Stochastic depth rate')
 
     # optimization
-    parser.add_argument('--num_workers', type=int, default=2, help='data loader num workers')
+    parser.add_argument('--num_workers', type=int, default=8, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')
     parser.add_argument('--train_epochs', type=int, default=10, help='train epochs')
     parser.add_argument('--batch_size', type=int, default=4, help='batch size of train input data')

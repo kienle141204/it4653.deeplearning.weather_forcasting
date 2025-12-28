@@ -30,6 +30,8 @@ class WeatherDataset(Dataset):
         
         self.data, self.col_names, self.timestamps = self.__read_data__()
         self.spatial_encoding = self._create_spatial_encoding()
+        
+        self.temporal_features = self._get_temporal_features(self.timestamps)
     
     # Fourier Position Encoding for 2D grid
     def _create_spatial_encoding(self):
@@ -148,19 +150,15 @@ class WeatherDataset(Dataset):
         r_begin = s_end
         r_end = r_begin + self.pred_len
 
-
         # Weather data: (T, H, W, C)
         seq_x = torch.FloatTensor(self.data[s_begin:s_end])
         seq_y = torch.FloatTensor(self.data[r_begin:r_end])
 
         seq_x = seq_x.permute(0, 3, 1, 2)  # (T, C, H, W)
         seq_y = seq_y.permute(0, 3, 1, 2)  # (T, C, H, W)
-        
-        # Temporal features: (T, D_temporal)
-        seq_x_mark = torch.FloatTensor(
-            self._get_temporal_features(self.timestamps[s_begin:s_end]))
-        seq_y_mark = torch.FloatTensor(
-            self._get_temporal_features(self.timestamps[r_begin:r_end]))
+
+        seq_x_mark = torch.FloatTensor(self.temporal_features[s_begin:s_end])
+        seq_y_mark = torch.FloatTensor(self.temporal_features[r_begin:r_end])
         
         # Spatial encoding: (H, W, D_spatial)
         spatial_enc = self.spatial_encoding
