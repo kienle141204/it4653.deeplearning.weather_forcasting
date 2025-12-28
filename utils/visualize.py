@@ -56,8 +56,9 @@ def visualize(historical_data, true_data, predicted_data,
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved: {save_path}")
     
-    plt.show()
+    plt.close()  # Đóng figure để không hiển thị, chỉ lưu file
 
 def visualize_frame(historical_data, true_data, predicted_data,
                     x_mark=None, y_mark=None,
@@ -139,4 +140,4 @@ def visualize_frame(historical_data, true_data, predicted_data,
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved: {save_path}")
 
-    plt.show()
+    plt.close()  # Đóng figure để không hiển thị, chỉ lưu file

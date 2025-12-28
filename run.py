@@ -9,6 +9,14 @@ import numpy as np
 
 warnings.filterwarnings('ignore')
 
+def tuple_type(strings):
+    """Parse tuple from command line argument"""
+    if isinstance(strings, tuple):
+        return strings  # Already a tuple
+    strings = strings.replace("(", "").replace(")", "").strip()
+    mapped_int = map(int, strings.split(","))
+    return tuple(mapped_int)
+
 def main():
     seed = 2025
     random.seed(seed)
@@ -17,7 +25,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Run Weather Forecasting Experiment')
     # basic config
-    parser.add_argument('--grid_size', type=tuple, default=(16, 16), help='grid size of the data')
+    parser.add_argument('--grid_size', type=tuple_type, default=(16, 16), help='grid size of the data (format: 16,16 or (16,16))')
     parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
     # parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
     parser.add_argument('--model', type=str, required=True, default='ConvLSTM',
@@ -151,14 +159,17 @@ def main():
             torch.cuda.empty_cache()
     else:
         ii = 0
-        setting = '{}_sl{}_pl{}_lr{}_ep{}'.format(
+        setting = '{}_sl{}_pl{}_lr{}_ep{}_hd{}_ss{}_mh{}'.format(
                         args.model,
                         # args.data,
                         args.his_len,
                         # args.label_len,
                         args.pred_len,
                         args.learning_rate,
-                        args.train_epochs)
+                        args.train_epochs,
+                        args.hidden_channels,
+                        args.scheduled_sampling,
+                        args.use_multi_heads)
         if not args.features:
             setting += '_in_c{}_ft_{}'.format(
                 args.input_channels,
@@ -170,11 +181,15 @@ def main():
                 args.num_layers
             )
         else:
-            setting += ''
+            setting += '_ps_{}_depths_{}'.format(
+                args.patch_size,
+                args.depths
+            )
+
 
         exp = Exp_Long_Term_Forecasting(args)
-        # print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-        # exp.test(setting, test=1)
+        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+        exp.test(setting, test=1)
         # torch.cuda.empty_cache()
     
     # Here you would typically load your config and start the experiment

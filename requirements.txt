@@ -6,3 +6,4 @@ torch
 timm
 einops
 scipy
+wandb
