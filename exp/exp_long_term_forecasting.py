@@ -143,7 +143,9 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
             os.makedirs(path)
 
         best_valid_loss = float('inf')
-        best_model = None
+        best_model_state = None
+        patience_counter = 0
+        patience = self.args.early_stop_patience
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -194,10 +196,11 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
             
             scheduler.step(vali_loss)
             
-            # Early stopping
+            # Early stopping - lưu model tốt nhất
             if vali_loss < best_valid_loss:
-                best_model = copy.deepcopy(self.model)
+                # Lưu state_dict thay vì deepcopy để tránh vấn đề với buffer
                 best_valid_loss = vali_loss
+                best_model_state = copy.deepcopy(self.model.state_dict())
                 patience_counter = 0
                 self.logger.info(f"New best model! Validation loss: {best_valid_loss:.7f}")
             else:
@@ -207,8 +210,15 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                     self.logger.info(f"Early stopping at epoch {epoch + 1}")
                     break
 
+        # Lưu model tốt nhất
         best_model_path = path + '/' + 'checkpoint.pth'
-        torch.save(best_model.state_dict(), best_model_path)
+        if best_model_state is not None:
+            torch.save(best_model_state, best_model_path)
+            self.logger.info(f"Model saved to {best_model_path}")
+        else:
+            # Fallback: lưu model hiện tại nếu không có best_model
+            torch.save(self.model.state_dict(), best_model_path)
+            self.logger.warning(f"No best model found, saving current model to {best_model_path}")
 
     def test(self, setting, test=0):
         folder_path = f'./results/{self.args.model}/' + setting + '/'
@@ -248,13 +258,16 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                     outputs_inv = outputs_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
                     batch_y_inv = batch_y_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
                     
-
-                pred = outputs_inv
-                true = batch_y_inv
+                    pred = outputs_inv
+                    true = batch_y_inv
+                else:
+                    pred = outputs
+                    true = batch_y
 
                 preds.append(pred)
                 trues.append(true)
-                if i % 10 == 0:
+                # Tạo ảnh mỗi 50 batch (có thể thay đổi số này để tăng/giảm số ảnh)
+                if i % 50 == 0:
                     # print("shape")
                     # print(batch_x_mark.shape, batch_y_mark.shape)
                     # print(batch_x_mark[0, :, :].shape, batch_y_mark[0, :, :].shape)

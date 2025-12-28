@@ -1,6 +1,6 @@
 import os
 import torch
-from models import ConvLSTM, SwinLSTM, SwinLSTMDeep, PredRNN
+from models import ConvLSTM, SwinLSTM, SwinLSTMDeep, PredRNN, GraphWaveNet
 
 class Exp_Basic(object):
     def __init__(self, args):
@@ -9,7 +9,8 @@ class Exp_Basic(object):
             'ConvLSTM': ConvLSTM,
             # 'SwinLSTM': SwinLSTM,
             # 'SwinLSTMDeep': SwinLSTMDeep,
-            'PredRNN': PredRNN
+            'PredRNN': PredRNN,
+            'GraphWaveNet': GraphWaveNet
         }
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
