@@ -13,7 +13,6 @@ from utils.schedule_sampling import schedule_sampling_exp, reserve_schedule_samp
 from utils.visualize import visualize, visualize_frame
 from utils.logger import getlogger
 import wandb 
-import os 
 import logging
 
 # Bỏ qua tất cả các cảnh báo
@@ -23,8 +22,29 @@ warnings.filterwarnings('ignore')
 logging.getLogger('timm').setLevel(logging.ERROR)
 
 # Login wandb only once (not in every import)
-if not wandb.api.api_key:
-    wandb.login(key=os.getenv('WANDB_KEY'))
+# Check if running in Kaggle environment (disable wandb if so)
+is_kaggle = os.environ.get('KAGGLE_KERNEL_RUN_TYPE') is not None
+
+# Set wandb to non-interactive mode for Kaggle/CI environments
+os.environ['WANDB_SILENT'] = 'true'
+os.environ['WANDB_DISABLE_CODE'] = 'true'
+os.environ['WANDB_CONSOLE'] = 'off'
+
+# For Kaggle or if explicitly disabled, skip wandb
+if is_kaggle or os.environ.get('WANDB_MODE') == 'disabled':
+    os.environ['WANDB_MODE'] = 'disabled'
+    print("WandB is disabled (Kaggle environment or WANDB_MODE=disabled)")
+else:
+    # Force login with the specified key (relogin=True to override cached credentials)
+    # Set API key directly to avoid interactive prompt
+    try:
+        os.environ['WANDB_API_KEY'] = 'cc3ae1cab3d94989520cf4c8164d37c29744f1b2'
+        # Use _disable_stats=True to avoid any prompts
+        wandb.login(key='cc3ae1cab3d94989520cf4c8164d37c29744f1b2', relogin=True)
+    except Exception as e:
+        # If login fails, disable wandb to avoid blocking
+        print(f"Warning: wandb login failed: {e}. Continuing without wandb.")
+        os.environ['WANDB_MODE'] = 'disabled'
 
 # Enable optimizations
 torch.backends.cudnn.benchmark = True  # Faster for fixed input sizes
@@ -33,7 +53,13 @@ torch.backends.cudnn.deterministic = False  # Faster but less reproducible
 class Exp_Long_Term_Forecasting(Exp_Basic):
     def __init__(self, args):
         super(Exp_Long_Term_Forecasting, self).__init__(args)
-        wandb.init(project="DL-project", name=f"{self.model.model_name}_{datetime.now().strftime('%Y-%m-%d %H:%M')}", config=vars(args))
+        # Only init wandb if not disabled
+        if os.environ.get('WANDB_MODE') != 'disabled':
+            try:
+                wandb.init(project="DL-project", name=f"{self.model.model_name}_{datetime.now().strftime('%Y-%m-%d %H:%M')}", config=vars(args))
+            except Exception as e:
+                print(f"Warning: wandb.init failed: {e}. Continuing without wandb.")
+                os.environ['WANDB_MODE'] = 'disabled'
         self.logger = getlogger(logpath='./logs/experiment.log', name='Experiment')
         self.logger.info(f"Model: {self.model}")
         
@@ -71,51 +97,22 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         return data_loader, dataset
     
     def _create_optimizer(self):
-        # Use AdamW with better weight decay
-        optimizer = optim.AdamW(
-            self.model.parameters(), 
-            lr=self.args.learning_rate, 
-            weight_decay=1e-4,
-            betas=(0.9, 0.999),
-            eps=1e-8,
-            fused=True  # Faster on modern GPUs
-        ) 
+        optimizer = optim.Adam(self.model.parameters(), lr=self.args.learning_rate, weight_decay=1e-5) 
+        # optimizer = optim.Adam(self.model.parameters(), lr=self.args.learning_rate) 
         return optimizer
     
     def _create_scheduler(self, optimizer):
-        # Use CosineAnnealingWarmRestarts for better convergence + ReduceLROnPlateau
-        # Warmup + cosine annealing helps with accuracy
-        warmup_scheduler = optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=0.1, total_iters=5
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.1, patience=self.args.lr_patience,
+            # verbose=True
         )
-        cosine_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=10, T_mult=2, eta_min=1e-6
-        )
-        plateau_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=self.args.lr_patience,
-            min_lr=1e-6
-        )
-        # Use plateau scheduler (more stable)
-        return plateau_scheduler
+        return scheduler
     
     def _create_criterion(self):
-        # Improved loss: MSE + Huber + L1 for better accuracy
-        class CombinedLoss:
-            def __init__(self):
-                self.mse_loss = torch.nn.MSELoss()
-                self.huber_loss = torch.nn.HuberLoss(delta=1.0)
-                self.l1_loss = torch.nn.L1Loss()
-            
-            def __call__(self, pred, true):
-                mse = self.mse_loss(pred, true)
-                huber = self.huber_loss(pred, true)
-                l1 = self.l1_loss(pred, true)
-                # Weighted combination: 50% MSE, 30% Huber, 20% L1
-                return 0.5 * mse + 0.3 * huber + 0.2 * l1
-        
-        return CombinedLoss()
+        criterion = torch.nn.MSELoss()
+        return criterion
     
-    def vali(self, vali_data, vali_loader, criterion):
+    def vali(self, vali_data, vali_loader, criterion, debug=False):
         col_names = vali_data.col_names
         std_cols = vali_data.std_cols
         minmax_cols = vali_data.minmax_cols
@@ -128,18 +125,16 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
         total_loss = []
         self.model.eval()
+        
         with torch.no_grad():
-            # Use mixed precision for validation (faster)
-            for index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp  in vali_loader:
+            for i, (index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp) in enumerate(vali_loader):
                 seq_x = seq_x.to(self.device)
                 seq_y = seq_y.to(self.device)
-                
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
-                        output = self.model(seq_x)
-                else:
-                    output = self.model(seq_x)
-                    
+                seq_x_mark = seq_x_mark.to(self.device)
+                seq_y_mark = seq_y_mark.to(self.device)
+
+                output = self.model(seq_x)
+
                 std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
                 minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
                 robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
@@ -174,9 +169,6 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         optimizer = self._create_optimizer()
         scheduler = self._create_scheduler(optimizer)
         criterion = self._create_criterion()
-        
-        # Use mixed precision for faster training (2x speedup)
-        scaler = torch.cuda.amp.GradScaler() if self.args.use_amp else None
 
         patience = self.args.early_stop_patience  # Early stopping patience
         patience_counter = 0
@@ -187,7 +179,9 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
             os.makedirs(path)
 
         best_valid_loss = float('inf')
-        best_model = None
+        best_model_state = None
+        patience_counter = 0
+        patience = self.args.early_stop_patience
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -195,7 +189,6 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
             train_loss = []
 
             epoch_start_time = time.time()
-            
             for index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp  in train_loader:
                 iter_count += 1
                 mask_true = schedule_sampling_exp(self.args, iter_count, train_steps)
@@ -204,57 +197,51 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                 seq_x_mark = seq_x_mark.to(self.device)
                 seq_y_mark = seq_y_mark.to(self.device)
 
+                # print(seq_x.shape, seq_y.shape)
+
                 optimizer.zero_grad()
-                
-                # Mixed precision training
-                if self.args.use_amp and scaler is not None:
-                    with torch.cuda.amp.autocast():
-                        output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
-                        std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
-                        minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
-                        robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
-                        tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
-                        loss = std_loss + minmax_loss + robust_loss + tcc_loss
-                    
-                    scaler.scale(loss).backward()
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
-                    std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
-                    minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
-                    robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
-                    tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
-                    loss = std_loss + minmax_loss + robust_loss + tcc_loss
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    optimizer.step()
+                output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
+
+                std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
+                minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
+                robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
+                tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
+
+                loss = std_loss + minmax_loss + robust_loss + tcc_loss
 
                 train_loss.append(loss.item())
+                loss.backward()
+                optimizer.step()
 
-            self.logger.info("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_start_time))
+            self.logger.info("[Train] - epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_start_time))
             train_loss = np.average(train_loss)
             
-            # Validate every epoch (needed for early stopping and scheduler)
-            # But skip test_loss calculation to save time (only calculate every 5 epochs)
-            vali_loss = self.vali(vali_dataset, vali_loader, criterion)
-            if epoch % 5 == 0 or epoch == 0:
-                test_loss = self.vali(test_dataset, test_loader, criterion)
+            # Debug mode cho epoch đầu tiên
+            debug_mode = (epoch == 0)
+            vali_loss = self.vali(vali_dataset, vali_loader, criterion, debug=debug_mode)
+            test_loss = self.vali(test_dataset, test_loader, criterion, debug=debug_mode)
+
+            # Only log to wandb if not disabled
+            if os.environ.get('WANDB_MODE') != 'disabled':
+                try:
+                    wandb.log({"train loss": train_loss, "vali loss": vali_loss}, step=epoch)
+                except:
+                    pass
+
+            if epoch % 5 == 0:
+                self.logger.info("[Vali] - epoch: {0}, steps: {1}, lr: {2} | [train loss: {3:.7f}] - [vali loss: {4:.7f}] - [test loss: {5:.7f}]".format(
+                    epoch + 1, train_steps, optimizer.param_groups[0]['lr'], train_loss, vali_loss, test_loss))
             else:
-                test_loss = vali_loss  # Approximate
-            
-            wandb.log({"Train Loss": train_loss, "Validation Loss": vali_loss}, step=epoch)
-            self.logger.info("Epoch: {0}, Steps: {1}, Lr: {2} | Train Loss: {3:.7f} Vali Loss: {4:.7f} Test Loss: {5:.7f}".format(
-                epoch + 1, train_steps, optimizer.param_groups[0]['lr'], train_loss, vali_loss, test_loss))
+                self.logger.info("[Vali] - epoch: {0}, steps: {1}, lr: {2} | [train loss: {3:.7f}] - [vali loss: {4:.7f}]".format(
+                    epoch + 1, train_steps, optimizer.param_groups[0]['lr'], train_loss, vali_loss))
             
             scheduler.step(vali_loss)
             
-            # Early stopping
+            # Early stopping - lưu model tốt nhất
             if vali_loss < best_valid_loss:
-                best_model = copy.deepcopy(self.model)
+                # Lưu state_dict thay vì deepcopy để tránh vấn đề với buffer
                 best_valid_loss = vali_loss
+                best_model_state = copy.deepcopy(self.model.state_dict())
                 patience_counter = 0
                 self.logger.info(f"New best model! Validation loss: {best_valid_loss:.7f}")
             else:
@@ -264,8 +251,15 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                     self.logger.info(f"Early stopping at epoch {epoch + 1}")
                     break
 
+        # Lưu model tốt nhất
         best_model_path = path + '/' + 'checkpoint.pth'
-        torch.save(best_model.state_dict(), best_model_path)
+        if best_model_state is not None:
+            torch.save(best_model_state, best_model_path)
+            self.logger.info(f"Model saved to {best_model_path}")
+        else:
+            # Fallback: lưu model hiện tại nếu không có best_model
+            torch.save(self.model.state_dict(), best_model_path)
+            self.logger.warning(f"No best model found, saving current model to {best_model_path}")
 
     def test(self, setting, test=0):
         folder_path = f'./results/{self.args.model}/' + setting + '/'
@@ -302,12 +296,14 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                     outputs_inv = test_data.inverse_transform(outputs_reshaped)
                     batch_y_inv = test_data.inverse_transform(batch_y_reshaped)
 
-                    outputs = outputs_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
-                    batch_y = batch_y_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
+                    outputs_inv = outputs_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
+                    batch_y_inv = batch_y_inv.reshape(batch_size, his_len, height, width, n_features).transpose(0, 1, 4, 2, 3)
                     
-
-                pred = outputs
-                true = batch_y
+                    pred = outputs_inv
+                    true = batch_y_inv
+                else:
+                    pred = outputs
+                    true = batch_y
 
                 preds.append(pred)
                 trues.append(true)
@@ -318,8 +314,8 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
                     # print(batch_x_mark[0, 0, :].detach().cpu().numpy())
                     visualize(
                         historical_data=batch_x[0, :, 0, 0, 0].detach().cpu().numpy(),
-                        true_data=true[0, :, 0, 0, 0],
-                        predicted_data=pred[0, :, 0, 0, 0],
+                        true_data=batch_y[0, :, 0, 0, 0],
+                        predicted_data=outputs[0, :, 0, 0, 0],
                         x_mark=batch_x_mark[0, :, :].detach().cpu().numpy(),
                         y_mark=batch_y_mark[0, :, :].detach().cpu().numpy(),
                         title=f"{self.model.model_name}-Test Sample {i}-Weather Forecasting",
@@ -343,10 +339,10 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
         
         mae, mse, rmse, mape= metric(preds, trues)
-        self.logger.info('Test - mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
+        self.logger.info('Test - [mse: {}], [mae: {}], [rmse: {}], [mape: {}]'.format(mse, mae, rmse, mape))
         f = open("result_long_term_forecast.txt", 'a')
         f.write(setting + "  \n")
-        f.write('Test - mse:{}, mae:{}, rmse:{}, mape: {}'.format(mse, mae, rmse, mape))
+        f.write('Test - [mse: {}], [mae: {}], [rmse: {}], [mape: {}]'.format(mse, mae, rmse, mape))
         f.write('\n')
         f.write('\n')
         f.close()

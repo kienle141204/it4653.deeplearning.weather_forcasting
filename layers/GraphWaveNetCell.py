@@ -43,3 +43,4 @@ class GraphWaveNetLayer(nn.Module):
         gcn_out = self.gcn(gcn_input, adj).reshape(B, T, N, C).permute(0, 3, 2, 1)
         return self.residual(x) + gcn_out, self.skip(gcn_out)
 
+
