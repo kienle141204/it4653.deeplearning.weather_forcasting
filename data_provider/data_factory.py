@@ -35,13 +35,17 @@ def data_provider(args, flag="train"):
         )
     
 
-    shuffle = False
+    shuffle = True if flag == "train" else False
     
     data_loader = DataLoader(
         dataset,
         batch_size=args.batch_size,
         shuffle=shuffle,
-        num_workers=args.num_workers
+        num_workers=args.num_workers,
+        pin_memory=True,
+        prefetch_factor=2 if args.num_workers > 0 else None,
+        persistent_workers=True if args.num_workers > 0 else False,
+        drop_last=True if flag == "train" else False
     )
     return data_loader, dataset
 
@@ -71,12 +75,16 @@ def traffic_data_provider(args, flag="train"):
         )
     
 
-    shuffle = False
+    shuffle = True if flag == "train" else False
     
     data_loader = DataLoader(
         dataset,
         batch_size=args.batch_size,
         shuffle=shuffle,
-        num_workers=args.num_workers
+        num_workers=args.num_workers,
+        pin_memory=True,
+        prefetch_factor=2 if args.num_workers > 0 else None,
+        persistent_workers=True if args.num_workers > 0 else False,
+        drop_last=True if flag == "train" else False
     )
     return data_loader, dataset

@@ -2,6 +2,7 @@ from exp.exp_basic import Exp_Basic
 from data_provider.data_factory import data_provider
 import torch
 from torch import optim
+from torch.cuda.amp import GradScaler, autocast
 import time 
 from datetime import datetime
 import numpy as np
@@ -147,6 +148,10 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         best_model_state = None
         patience_counter = 0
         patience = self.args.early_stop_patience
+        
+        scaler = GradScaler() if self.args.use_amp else None
+        if self.args.use_amp:
+            self.logger.info("Using Automatic Mixed Precision (AMP) training")
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -157,26 +162,42 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
             for index, seq_x, seq_y, seq_x_mark, seq_y_mark, sp  in train_loader:
                 iter_count += 1
                 mask_true = schedule_sampling_exp(self.args, iter_count, train_steps)
-                seq_x = seq_x.to(self.device)
-                seq_y = seq_y.to(self.device)
-                seq_x_mark = seq_x_mark.to(self.device)
-                seq_y_mark = seq_y_mark.to(self.device)
+                
+                seq_x = seq_x.to(self.device, non_blocking=True)
+                seq_y = seq_y.to(self.device, non_blocking=True)
+                seq_x_mark = seq_x_mark.to(self.device, non_blocking=True)
+                seq_y_mark = seq_y_mark.to(self.device, non_blocking=True)
 
-                # print(seq_x.shape, seq_y.shape)
+                optimizer.zero_grad(set_to_none=True)
+                
+                if self.args.use_amp:
+                    with autocast():
+                        output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
+                        
+                        std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
+                        minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
+                        robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
+                        tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
 
-                optimizer.zero_grad()
-                output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
+                        loss = std_loss + minmax_loss + robust_loss + tcc_loss
+                    
+                    train_loss.append(loss.item())
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    output = self.model(seq_x, mask_true=mask_true, ground_truth=seq_y)
 
-                std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
-                minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
-                robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
-                tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
+                    std_loss = criterion(output[:, :, std_cols_indices, :, :], seq_y[:, :, std_cols_indices, :, :]) if std_cols_indices else 0
+                    minmax_loss = criterion(output[:, :, minmax_cols_indices, :, :], seq_y[:, :, minmax_cols_indices, :, :]) if minmax_cols_indices else 0
+                    robust_loss = criterion(output[:, :, robust_cols_indices, :, :], seq_y[:, :, robust_cols_indices, :, :]) if robust_cols_indices else 0
+                    tcc_loss = criterion(output[:, :, tcc_cols_indices, :, :], seq_y[:, :, tcc_cols_indices, :, :]) if tcc_cols_indices else 0
 
-                loss = std_loss + minmax_loss + robust_loss + tcc_loss
+                    loss = std_loss + minmax_loss + robust_loss + tcc_loss
 
-                train_loss.append(loss.item())
-                loss.backward()
-                optimizer.step()
+                    train_loss.append(loss.item())
+                    loss.backward()
+                    optimizer.step()
 
             self.logger.info("[Train] - epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_start_time))
             train_loss = np.average(train_loss)
