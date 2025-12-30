@@ -74,7 +74,7 @@ def visualize(historical_data, true_data, predicted_data,
             last_historical_time = x_mark[-1]
             plt.axvline(x=last_historical_time, color='black', linestyle=':', linewidth=1, label='Forecast Start')
     
-    plt.title(title, fontsize=16)
+    # plt.title(title, fontsize=16)
     plt.xlabel(xlabel, fontsize=12)
     plt.ylabel(ylabel, fontsize=12)
     plt.legend()
@@ -152,7 +152,7 @@ def visualize_frame(historical_data, true_data, predicted_data,
     cbar = fig.colorbar(im, cax=cbar_ax)
     cbar.set_label('Normalized Value', rotation=270, labelpad=20, fontsize=12)
 
-    fig.suptitle(title, fontsize=20, fontweight='bold', y=0.98)
+    # fig.suptitle(title, fontsize=20, fontweight='bold', y=0.98)
 
     if save_path:
         import os

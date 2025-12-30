@@ -14,7 +14,7 @@ from utils.visualize import visualize, visualize_frame
 from utils.logger import getlogger
 import wandb 
 import os 
-wandb.login(key = os.getenv('WANDB_KEY'))
+wandb.login(key = 'c18f56f87b92b4296251b454a8556397e6153841')
 
 
 # Bỏ qua tất cả các cảnh báo
@@ -272,8 +272,8 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
 
                 preds.append(pred)
                 trues.append(true)
-                # Tạo ảnh mỗi 50 batch (có thể thay đổi số này để tăng/giảm số ảnh)
-                if i % 50 == 0:
+                # Tạo ảnh mỗi 10 batch 
+                if i % 10 == 0:
                     # print("shape")
                     # print(batch_x_mark.shape, batch_y_mark.shape)
                     # print(batch_x_mark[0, :, :].shape, batch_y_mark[0, :, :].shape)
@@ -325,10 +325,22 @@ class Exp_Long_Term_Forecasting(Exp_Basic):
         mae, mse, rmse, mape= metric(preds, trues)
         self.logger.info('Test - [mse: {}], [mae: {}], [rmse: {}], [mape: {}]'.format(mse, mae, rmse, mape))
         f = open("result_long_term_forecast.txt", 'a')
+        f.write("="*50 + "\n")
         f.write(setting + "  \n")
         f.write('Test - [mse: {}], [mae: {}], [rmse: {}], [mape: {}]'.format(mse, mae, rmse, mape))
         f.write('\n')
+        for col_idx, col in enumerate(col_names):
+            mae, mse, rmse, mape= metric(preds[:, :, col_idx], trues[:, :, col_idx])
+            self.logger.info('Test - [mse: {}], [mae: {}], [rmse: {}], [mape: {}]'.format(mse, mae, rmse, mape))
+            f.write(setting + "-{}  \n".format(col))
+            f.write('Test - [mse: {}], [mae: {}], [rmse: {}], [mape: {}]'.format(mse, mae, rmse, mape))
+            f.write('\n')
         f.write('\n')
+        f.write('\n')
+        f.write("="*50 + "\n")
         f.close()
+
+        
+
 
 
