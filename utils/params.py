@@ -19,7 +19,7 @@ def get_parser():
                         help='grid size of the data (format: 16,16 or (16,16))')
     parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
     parser.add_argument('--model', type=str, required=True, default='ConvLSTM',
-                        help='model name, options: [ConvLSTM]')
+                        help='model name, options: [ConvLSTM, PredRNN, GraphWaveNet, DCRNN]')
     parser.add_argument('--inverse', action='store_true', help='inverse output data', default=False)
 
     # data loader
@@ -61,6 +61,10 @@ def get_parser():
                         help='whether batch is first dimension', default=True)
     parser.add_argument('--stride', type=int, default=1)
     parser.add_argument('--layer_norm', type=int, default=1)
+    
+    # DCRNN parameters
+    parser.add_argument('--num_diffusion_steps', type=int, default=2, 
+                        help='number of diffusion steps for DCRNN')
 
     # scheduled sampling
     parser.add_argument('--reverse_scheduled_sampling', type=int, default=0)
