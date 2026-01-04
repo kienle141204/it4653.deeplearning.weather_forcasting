@@ -6,7 +6,8 @@ Deep learning models for weather time-series forecasting.
 
 - **ConvLSTM** - Convolutional LSTM for spatiotemporal prediction
 - **PredRNN** - Predictive RNN with spatiotemporal memory
-- **SwinLSTM** - Swin Transformer + LSTM hybrid
+- **DCRNN**
+- **GraphWaveNet** 
 
 ## Quick Start
 
