@@ -11,20 +11,20 @@ class Model(nn.Module):
         self.configs = configs
         self.frame_channel = configs.input_channels
         self.num_layers = configs.num_layers
-        self.num_hidden = configs.num_hidden
+        self.hidden_channels = configs.hidden_channels
         self.kernel_size = configs.kernel_size
         cell_list = []
 
         width = configs.grid_size[0] 
 
         for i in range(self.num_layers):
-            in_channel = self.frame_channel if i == 0 else self.num_hidden[i - 1]
+            in_channel = self.frame_channel if i == 0 else self.hidden_channels[i - 1]
             cell_list.append(
-                SpatioTemporalLSTMCell(in_channel, self.num_hidden[i], width, self.kernel_size,
+                SpatioTemporalLSTMCell(in_channel, self.hidden_channels[i], width, self.kernel_size,
                                        configs.stride, configs.layer_norm)
             )
         self.cell_list = nn.ModuleList(cell_list)
-        self.conv_last = nn.Conv2d(self.num_hidden[self.num_layers - 1], self.frame_channel,
+        self.conv_last = nn.Conv2d(self.hidden_channels[self.num_layers - 1], self.frame_channel,
                                    kernel_size=1, stride=1, padding=0, bias=False)
 
 
@@ -42,11 +42,11 @@ class Model(nn.Module):
         h_t = []; c_t = []
 
         for i in range(self.num_layers):
-            zeros = torch.zeros([batch, self.num_hidden[i], height, width]).to(self.configs.gpu)
+            zeros = torch.zeros([batch, self.hidden_channels[i], height, width]).to(self.configs.gpu)
             h_t.append(zeros)
             c_t.append(zeros)
 
-        memory = torch.zeros([batch, self.num_hidden[0], height, width]).to(self.configs.gpu)
+        memory = torch.zeros([batch, self.hidden_channels[0], height, width]).to(self.configs.gpu)
 
         # Vòng lặp chính
         for t in range(total_sim_steps):
