@@ -2,7 +2,6 @@ import argparse
 
 
 def tuple_type(strings):
-    """Parse tuple from command line argument"""
     if isinstance(strings, tuple):
         return strings  # Already a tuple
     strings = strings.replace("(", "").replace(")", "").strip()
@@ -11,7 +10,6 @@ def tuple_type(strings):
 
 
 def get_parser():
-    """Create and return argument parser with all parameters"""
     parser = argparse.ArgumentParser(description='Run Weather Forecasting Experiment')
     
     # basic config
@@ -50,7 +48,7 @@ def get_parser():
                         help='input dimension')
     parser.add_argument('--hidden_channels', type=int, nargs='+', default=[64, 128], 
                         help='hidden dimensions for ConvLSTM layers')
-    parser.add_argument('--num_hidden', type=int, default=[64, 64, 64, 64])
+    # parser.add_argument('--num_hidden', type=int, default=[64, 64, 64, 64])
     parser.add_argument('--kernel_size', type=int, default=5, 
                         help='kernel size for ConvLSTM layers')
     parser.add_argument('--num_layers', type=int, default=2, 
@@ -129,15 +127,14 @@ def get_parser():
 
 
 def get_args():
-    """Parse and return command line arguments"""
     parser = get_parser()
     return parser.parse_args()
 
 
 def get_setting(args):
-    """Generate experiment setting string from args"""
-    setting = '{}_sl{}_pl{}_lr{}_ep{}_hd{}_ss{}_mh{}'.format(
+    setting = 'md{}_bs{}_sl{}_pl{}_lr{}_ep{}_hd{}_ss{}_mh{}'.format(
         args.model,
+        args.batch_size,
         args.his_len,
         args.pred_len,
         args.learning_rate,

@@ -7,7 +7,7 @@ class Exp_Basic(object):
         self.args = args
         self.model_dict = {
             'ConvLSTM': ConvLSTM,
-            # 'SwinLSTM': SwinLSTM,
+            'SwinLSTM': SwinLSTM,
             # 'SwinLSTMDeep': SwinLSTMDeep,
             'PredRNN': PredRNN,
             'GraphWaveNet': GraphWaveNet

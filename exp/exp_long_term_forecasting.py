@@ -24,7 +24,7 @@ warnings.filterwarnings('ignore')
 class Exp_Long_Term_Forecasting(Exp_Basic):
     def __init__(self, args):
         super(Exp_Long_Term_Forecasting, self).__init__(args)
-        wandb.init(project="DL-project", name=f"{self.model.model_name}_{datetime.now().strftime('%Y-%m-%d %H:%M')}", config=vars(args))
+        wandb.init(project="DL-project-finaltest", name=f"{self.model.model_name}_{datetime.now().strftime('%Y-%m-%d %H:%M')}", config=vars(args))
         self.logger = getlogger(logpath='./logs/experiment.log', name='Experiment')
         self.logger.info(f"Model: {self.model}")
         self.args = args 

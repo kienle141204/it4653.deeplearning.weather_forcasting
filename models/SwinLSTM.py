@@ -15,6 +15,7 @@ class Model(nn.Module):
         drop_rate = configs.drop_rate
         attn_drop_rate = configs.attn_drop_rate
         drop_path_rate = configs.drop_path_rate
+        self.model_name = 'SwinLSTM'
 
         self.predict_steps = configs.pred_len
 
@@ -24,7 +25,7 @@ class Model(nn.Module):
                             attn_drop_rate=attn_drop_rate, drop_path_rate=drop_path_rate)
 
 
-    def forward(self, x):
+    def forward(self, x, hidden_state=None, mask_true=None, ground_truth=None):
         B, T, C, H, W = x.shape
         states = [None] * sum(self.depths)     
         outs = []
